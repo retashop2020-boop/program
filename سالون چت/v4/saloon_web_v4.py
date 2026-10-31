@@ -187,7 +187,8 @@ def resolve_recipients(text: str, members: list[Member]) -> list[Member]:
         if identity not in seen:
             selected.append(member)
             seen.add(identity)
-    return selected
+    # Keep the configured member order, independent of mention order.
+    return [member for member in members if id(member) in seen]
 
 
 def save_transcript(transcript: list[dict[str, Any]]) -> str:
