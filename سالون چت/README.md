@@ -45,4 +45,22 @@ File: `v4/saloon_web_v4.py`
 - Unknown, ambiguous, and disabled recipients return an explicit error; the program does not silently fall back to the group.
 - Basic routing tests: `python -m unittest test_recipient_routing.py` from the `v4` directory.
 
-V4 is isolated on branch `v4-recipient-routing`; V1–V3 and `main` remain unchanged. The tests are added but have not yet been executed in a Python runtime.
+V4 is preserved on branch `v4-recipient-routing`; V1–V3 and `main` remain unchanged.
+
+## v4.1 — network and member-failure resilience
+
+Branch: `v4.1-network-resilience` (based on V4; V4 remains unchanged)
+
+- Converts raw connection-reset, other OS-level network errors, and HTTP protocol read errors from `call_model` into a member-level `RuntimeError`.
+- Isolates each member call: an exception from one member is recorded as that member's error and does not stop later members.
+- Preserves successful replies and member errors in the same event list, then saves the completed turn transcript.
+- Adds focused tests for a first-member connection reset, preserving an earlier successful reply, passing prior member events into later context, and normalizing a raw connection reset.
+- Does not change recipient routing, model configuration, or the interaction design.
+
+Run tests from the `v4` directory:
+
+```powershell
+python -m unittest test_recipient_routing.py test_resilience.py
+```
+
+The V4.1 tests have been added but have not yet been executed in a Python runtime.
