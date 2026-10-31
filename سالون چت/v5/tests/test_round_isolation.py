@@ -106,7 +106,7 @@ class RoundIsolationTests(unittest.TestCase):
         self.assertEqual(seen_context_lengths, [len(self.context), len(self.context)])
         self.assertEqual(
             [event.content for event in result.shared_context[-2:]],
-            ["reply from analyst", "reply from critic"],
+            ["reply-analyst", "reply-critic"],
         )
 
     def test_one_member_failure_does_not_block_another(self) -> None:
