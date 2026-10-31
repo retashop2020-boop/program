@@ -9,6 +9,7 @@ API key: OPENROUTER_API_KEY environment variable or hidden terminal prompt.
 from __future__ import annotations
 
 import getpass
+import http.client
 import json
 import os
 import re
@@ -124,7 +125,9 @@ def call_model(api_key: str, member: Member, transcript: list[dict[str, Any]]) -
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:1000]
         raise RuntimeError("HTTP " + str(exc.code) + ": " + detail) from exc
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, http.client.HTTPException) as exc:
+        # urllib may surface connection resets and incomplete reads as raw OSError/
+        # HTTPException instances rather than wrapping every failure in URLError.
         raise RuntimeError("خطای ارتباط با سرویس: " + str(exc)) from exc
 
     choices = data.get("choices") or []
@@ -158,6 +161,40 @@ def call_model(api_key: str, member: Member, transcript: list[dict[str, Any]]) -
         raise RuntimeError("پاسخ خالی بود (finish_reason=" + str(finish_reason) + "). جزئیات تشخیصی در پنجرهٔ PowerShell ثبت شد.")
     return answer, truncated
 
+
+
+def collect_member_events(
+    api_key: str,
+    members: list[Member],
+    transcript: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Run each selected member independently and retain every result."""
+    context = list(transcript)
+    events: list[dict[str, Any]] = []
+    for member in members:
+        try:
+            answer, truncated = call_model(api_key, member, context)
+            if truncated:
+                answer += "\\n\\n[هشدار: احتمال دارد پاسخ به‌دلیل رسیدن به سقف توکن ناقص باشد.]"
+            event = {
+                "kind": "reply",
+                "member": member.name,
+                "model": member.model,
+                "text": answer,
+                "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+        except Exception as exc:
+            # A failed member must not discard earlier replies or block later members.
+            print("[member-error] " + member.name + ": " + type(exc).__name__ + ": " + str(exc))
+            event = {
+                "kind": "error",
+                "member": member.name,
+                "text": str(exc) or type(exc).__name__,
+                "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+        events.append(event)
+        context.append(event)
+    return events, context
 
 def resolve_recipients(text: str, members: list[Member]) -> list[Member]:
     """Resolve explicit @mentions; without mentions, use every enabled member.
@@ -377,22 +414,7 @@ class Handler(BaseHTTPRequestHandler):
                 active = resolve_recipients(text, self.server.members)
                 if not active:
                     raise ValueError("هیچ عضو فعالی برای پاسخ وجود ندارد. از پنل اعضا یکی را فعال کن.")
-                context = list(transcript)
-                events: list[dict[str, Any]] = []
-                for member in active:
-                    try:
-                        answer, truncated = call_model(self.server.api_key, member, context)
-                        if truncated:
-                            answer += "\n\n[هشدار: احتمال دارد پاسخ به‌دلیل رسیدن به سقف توکن ناقص باشد.]"
-                        event = {"kind": "reply", "member": member.name, "model": member.model,
-                                 "text": answer, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
-                        events.append(event)
-                        context.append(event)
-                    except RuntimeError as exc:
-                        event = {"kind": "error", "member": member.name, "text": str(exc),
-                                 "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
-                        events.append(event)
-                        context.append(event)
+                events, context = collect_member_events(self.server.api_key, active, transcript)
                 all_events = transcript + events
                 saved = save_transcript(all_events)
                 self.send_json(200, {"events": events, "saved": saved})
