@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from saloon_web_v4 import Member, collect_member_events
+from saloon_web_v4 import Member, call_model, collect_member_events
 
 
 class MemberFailureIsolationTests(unittest.TestCase):
@@ -37,6 +37,12 @@ class MemberFailureIsolationTests(unittest.TestCase):
         self.assertEqual([e["kind"] for e in events], ["reply", "error"])
         self.assertEqual(events[0]["text"], "Skeptic reply")
         self.assertEqual(context, events)
+
+    def test_call_model_converts_raw_connection_reset_to_runtime_error(self):
+        member = Member("Skeptic", "model-a", "role")
+        with patch("saloon_web_v4.urllib.request.urlopen", side_effect=ConnectionResetError(10054, "reset")):
+            with self.assertRaisesRegex(RuntimeError, "خطای ارتباط با سرویس"):
+                call_model("test-key", member, [])
 
     def test_later_member_receives_prior_member_event_in_context(self):
         seen_context_lengths = []
