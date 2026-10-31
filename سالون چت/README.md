@@ -32,3 +32,17 @@ File: `v3/saloon_web_v3.py`
 - When that exact model is selected, the request adds OpenRouter reasoning controls: `max_tokens: 256` for reasoning and `exclude: true` so reasoning is not included as a visible response field.
 - The ordinary answer budget remains the member's configured `max_tokens` (default 1200).
 - This is an experiment, not a verified fix. The model's behavior and provider acceptance must be tested at runtime.
+
+
+## v4 — recipient-aware routing
+
+File: `v4/saloon_web_v4.py`
+
+- Without an explicit recipient, all enabled members respond (existing group behavior).
+- `@Analyst` or `@Skeptic` routes the message only to the named member.
+- Multiple explicit mentions route only to those members.
+- Names containing spaces can be addressed as `@"Red Team"`.
+- Unknown, ambiguous, and disabled recipients return an explicit error; the program does not silently fall back to the group.
+- Basic routing tests: `python -m unittest test_recipient_routing.py` from the `v4` directory.
+
+V4 is isolated on branch `v4-recipient-routing`; V1–V3 and `main` remain unchanged. The tests are added but have not yet been executed in a Python runtime.
