@@ -175,7 +175,7 @@ def collect_member_events(
         try:
             answer, truncated = call_model(api_key, member, context)
             if truncated:
-                answer += "\\n\\n[هشدار: احتمال دارد پاسخ به‌دلیل رسیدن به سقف توکن ناقص باشد.]"
+                answer += "\n\n[هشدار: احتمال دارد پاسخ به‌دلیل رسیدن به سقف توکن ناقص باشد.]"
             event = {
                 "kind": "reply",
                 "member": member.name,
