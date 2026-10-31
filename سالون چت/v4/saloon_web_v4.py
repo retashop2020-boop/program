@@ -123,7 +123,10 @@ def call_model(api_key: str, member: Member, transcript: list[dict[str, Any]]) -
             http_status = response.status
             data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:1000]
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")[:1000]
+        except (OSError, http.client.HTTPException) as read_exc:
+            detail = "پاسخ خطای HTTP قابل خواندن نبود: " + str(read_exc)
         raise RuntimeError("HTTP " + str(exc.code) + ": " + detail) from exc
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, http.client.HTTPException) as exc:
         # urllib may surface connection resets and incomplete reads as raw OSError/
