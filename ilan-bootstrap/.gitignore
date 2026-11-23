@@ -26,3 +26,6 @@ env/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local backup files
+*.py.bak

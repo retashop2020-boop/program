@@ -1,4 +1,5 @@
 import os
+import subprocess
 from pathlib import Path
 
 from agent.loop import AgentLoop
@@ -18,6 +19,25 @@ from tools.list_files import register_list_files
 from tools.registry import ToolRegistry
 from tools.run_tests import register_run_tests
 from tools.apply_patch import register_apply_patch
+
+
+from core.relay_lifecycle import RelayLifecycle, RelayLifecycleConfig
+from core.relay_server import RelayHTTPServer
+from core.relay_session import RelaySessionManager
+
+
+def discover_eth0_ipv4():
+    result = subprocess.run(
+        ["/usr/sbin/ip", "-4", "-o", "addr", "show", "dev", "eth0"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if "inet" in fields:
+            return fields[fields.index("inet") + 1].split("/", 1)[0]
+    raise RuntimeError("Could not discover eth0 IPv4 address")
 
 
 def request_authorization(operation):
@@ -46,7 +66,35 @@ def main():
     workspace_path.mkdir(parents=True, exist_ok=True)
     workspace = WorkspaceBoundary(workspace_path)
 
+    relay = None
+    relay_started = False
+
     try:
+        relay_config = RelayLifecycleConfig(
+            bind_host=discover_eth0_ipv4(),
+            port=18765,
+        )
+
+        relay = RelayLifecycle(
+            relay_config,
+            server_factory=lambda *, config, session_manager, on_shutdown_requested: (
+                RelayHTTPServer(
+                    (config.bind_host, config.port),
+                    session_manager,
+                    on_shutdown_requested=on_shutdown_requested,
+                )
+            ),
+            session_manager_factory=lambda config: RelaySessionManager(
+                suspect_after_seconds=config.suspect_after_seconds,
+                recoverable_after_seconds=config.recoverable_after_seconds,
+                lease_timeout_seconds=config.lease_timeout_seconds,
+            ),
+        )
+
+        relay.start()
+        relay_started = True
+        print(f"Relay listening at {relay.server_address}")
+
         file_tools = FileTools(workspace)
 
         profile_registry = create_default_test_profile_registry()
@@ -158,7 +206,11 @@ def main():
                 print(f"\nRunner error: {type(exc).__name__}: {exc}\n")
 
     finally:
-        workspace.close()
+        try:
+            if relay_started:
+                relay.stop()
+        finally:
+            workspace.close()
 
 
 if __name__ == "__main__":
