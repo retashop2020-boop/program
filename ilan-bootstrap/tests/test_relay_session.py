@@ -71,6 +71,24 @@ def test_state_progresses_through_suspect_recoverable_and_expired():
     assert manager.snapshot().state is RelaySessionState.EXPIRED
 
 
+def test_authenticate_validates_owner_without_refreshing_lease():
+    manager, clock = make_manager()
+    credentials = manager.initial_credentials()
+    clock.advance(4)
+
+    assert manager.authenticate(credentials.session_id, credentials.owner_token) is None
+    assert manager.snapshot().seconds_since_heartbeat == 4
+
+    with pytest.raises(RelaySessionError) as exc:
+        manager.authenticate(credentials.session_id, "wrong-token")
+    assert exc.value.code == "INVALID_OWNER_TOKEN"
+
+    clock.advance(26)
+    with pytest.raises(RelaySessionError) as exc:
+        manager.authenticate(credentials.session_id, credentials.owner_token)
+    assert exc.value.code == "LEASE_NOT_ACTIVE"
+
+
 def test_valid_heartbeat_restores_alive_and_resets_lease():
     manager, clock = make_manager()
     credentials = manager.initial_credentials()
