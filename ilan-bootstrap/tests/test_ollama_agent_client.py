@@ -33,6 +33,33 @@ def make_client(**kwargs):
     )
 
 
+def test_relay_credentials_are_sent_as_auth_headers(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["headers"] = dict(request.header_items())
+        return FakeHTTPResponse({
+            "model": "gpt-oss-20b-local:latest",
+            "message": {"role": "assistant", "content": "ok"},
+            "done": True,
+        })
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+    client = make_client(
+        relay_session_id="session-123",
+        relay_owner_token="secret-token",
+    )
+    client.chat([{"role": "user", "content": "Hello"}])
+
+    assert captured["headers"]["X-relay-session-id"] == "session-123"
+    assert captured["headers"]["Authorization"] == "Bearer secret-token"
+
+
+def test_partial_relay_credentials_are_rejected():
+    with pytest.raises(ValueError, match="configured together"):
+        make_client(relay_session_id="session-123")
+
+
 def test_tool_result_gets_name_from_previous_tool_call():
     client = make_client()
 

@@ -251,6 +251,29 @@ class RelayHTTPServer(ThreadingHTTPServer):
                     callback()
 
             def _proxy_chat(self):
+                authorization = self.headers.get_all("Authorization", [])
+                session_ids = self.headers.get_all("X-Relay-Session-ID", [])
+                if len(authorization) != 1 or len(session_ids) != 1:
+                    self._json(401, {"error": "RELAY_AUTHENTICATION_REQUIRED"})
+                    return
+                scheme, separator, owner_token = authorization[0].partition(" ")
+                session_id = session_ids[0]
+                if (
+                    scheme.lower() != "bearer"
+                    or not separator
+                    or not owner_token
+                    or not session_id
+                    or owner_token.strip() != owner_token
+                    or session_id.strip() != session_id
+                ):
+                    self._json(401, {"error": "INVALID_RELAY_CREDENTIALS"})
+                    return
+                try:
+                    server.session_manager.authenticate(session_id, owner_token)
+                except Exception as exc:
+                    self._session_error(exc)
+                    return
+
                 content_types = self.headers.get_all("Content-Type", [])
                 if len(content_types) != 1:
                     self._json(415, {"error": "APPLICATION_JSON_REQUIRED"})

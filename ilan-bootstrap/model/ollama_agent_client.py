@@ -20,6 +20,8 @@ class OllamaAgentClient:
         base_url=None,
         timeout=None,
         thinking_mode=None,
+        relay_session_id=None,
+        relay_owner_token=None,
     ):
         self.model = (
             model
@@ -42,6 +44,19 @@ class OllamaAgentClient:
             if timeout is not None
             else int(os.environ.get("ILAN_OLLAMA_TIMEOUT", "2000"))
         )
+
+        self.relay_session_id = (
+            relay_session_id
+            or os.environ.get("ILAN_RELAY_SESSION_ID")
+        )
+        self.relay_owner_token = (
+            relay_owner_token
+            or os.environ.get("ILAN_RELAY_OWNER_TOKEN")
+        )
+        if bool(self.relay_session_id) != bool(self.relay_owner_token):
+            raise ValueError(
+                "Both relay session ID and owner token must be configured together"
+            )
 
         self.thinking_mode = (
             thinking_mode
@@ -239,6 +254,14 @@ class OllamaAgentClient:
             ).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
+                **(
+                    {
+                        "X-Relay-Session-ID": self.relay_session_id,
+                        "Authorization": "Bearer " + self.relay_owner_token,
+                    }
+                    if self.relay_session_id and self.relay_owner_token
+                    else {}
+                ),
             },
             method="POST",
         )

@@ -69,6 +69,10 @@ docker build -f Dockerfile.test -t ilan-test:0.1 .
 
 The configured Docker command currently uses `sudo -n docker` on Linux. Adjusting that policy is an environment/deployment decision, not an automatic setup step.
 
+### Authenticated Relay chat
+
+When `ILAN_OLLAMA_URL` points to the Relay listener, configure both `ILAN_RELAY_SESSION_ID` and `ILAN_RELAY_OWNER_TOKEN` in the AgentLoop process environment. The Ollama client sends the session ID in `X-Relay-Session-ID` and the owner token as an `Authorization: Bearer` credential. The Relay rejects `/api/chat` requests without valid current-owner credentials and does not refresh the session heartbeat as a side effect of chat authentication. Keep both values out of source control and logs; rotate them through the Relay recovery flow when ownership is reattached.
+
 ## Relay status and limitations
 
 The Relay modules currently cover session credentials/state transitions, an HTTP server, and lifecycle coordination. Tests cover the implemented module contracts, including local HTTP integration. The following remain outside this snapshot's verified scope:
