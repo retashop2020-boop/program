@@ -37,6 +37,9 @@ class FakeSessionManager:
         if self.state == "SHUTDOWN":
             raise FakeSessionError("SESSION_SHUTDOWN")
 
+    def authenticate(self, session_id, owner_token):
+        self._check(session_id, owner_token)
+
     def heartbeat(self, session_id, owner_token):
         self._check(session_id, owner_token)
         return FakeSnapshot()
@@ -139,7 +142,11 @@ def post_json(url, payload):
     return send_raw(
         url,
         json.dumps(payload).encode("utf-8"),
-        {"Content-Type": "application/json"},
+        {
+            "Content-Type": "application/json",
+            "X-Relay-Session-ID": "session-test",
+            "Authorization": "Bearer owner-test-secret",
+        },
     )
 
 
@@ -151,6 +158,34 @@ def test_chat_forwarded_and_response_preserved(relay_stack):
     assert body == FakeOllamaHandler.response_body
     assert FakeOllamaHandler.received[0] == "/api/chat"
     assert json.loads(FakeOllamaHandler.received[1]) == payload
+
+
+def test_chat_rejects_missing_authentication(relay_stack):
+    relay, _, _ = relay_stack
+    status, body = send_raw(
+        relay_url(relay, "/api/chat"),
+        json.dumps({"stream": False}).encode("utf-8"),
+        {"Content-Type": "application/json"},
+    )
+    assert status == 401
+    assert json.loads(body)["error"] == "RELAY_AUTHENTICATION_REQUIRED"
+    assert FakeOllamaHandler.received is None
+
+
+def test_chat_rejects_invalid_owner_token(relay_stack):
+    relay, _, _ = relay_stack
+    status, body = send_raw(
+        relay_url(relay, "/api/chat"),
+        json.dumps({"stream": False}).encode("utf-8"),
+        {
+            "Content-Type": "application/json",
+            "X-Relay-Session-ID": "session-test",
+            "Authorization": "Bearer wrong-token",
+        },
+    )
+    assert status == 401
+    assert json.loads(body)["error"] == "INVALID_OWNER_TOKEN"
+    assert FakeOllamaHandler.received is None
 
 
 def test_streaming_rejected(relay_stack):
