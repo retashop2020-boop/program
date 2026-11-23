@@ -197,7 +197,7 @@ def test_streaming_rejected(relay_stack):
 
 def test_media_type_must_be_exact_json(relay_stack):
     relay, _, _ = relay_stack
-    status, body = send_raw(relay_url(relay, "/api/chat"), b'{"stream":false}', {"Content-Type": "text/application/jsonx"})
+    status, body = send_raw(relay_url(relay, "/api/chat"), b'{"stream":false}', {"Content-Type": "text/application/jsonx", "X-Relay-Session-ID": "session-test", "Authorization": "Bearer owner-test-secret"})
     assert status == 415
 
 
@@ -310,7 +310,7 @@ def test_incomplete_content_length_rejected(relay_stack):
     relay, _, _ = relay_stack
     host, port = relay.server_address
     client = socket.create_connection((host, port), timeout=2)
-    client.sendall(b"POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 20\r\nConnection: close\r\n\r\n{}")
+    client.sendall(b"POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nX-Relay-Session-ID: session-test\r\nAuthorization: Bearer owner-test-secret\r\nContent-Length: 20\r\nConnection: close\r\n\r\n{}")
     client.shutdown(socket.SHUT_WR)
     chunks = []
     while True:
@@ -329,7 +329,7 @@ def test_invalid_content_length_rejected(relay_stack):
     relay, _, _ = relay_stack
     host, port = relay.server_address
     client = socket.create_connection((host, port), timeout=2)
-    client.sendall(b"POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: +2\r\nConnection: close\r\n\r\n{}")
+    client.sendall(b"POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nX-Relay-Session-ID: session-test\r\nAuthorization: Bearer owner-test-secret\r\nContent-Length: +2\r\nConnection: close\r\n\r\n{}")
     chunks = []
     while True:
         chunk = client.recv(4096)
@@ -359,7 +359,7 @@ def test_extremely_long_content_length_is_bounded(relay_stack):
     huge = b"9" * 5000
     client.sendall(
         b"POST /api/chat HTTP/1.1\r\nHost: localhost\r\n"
-        b"Content-Type: application/json\r\nContent-Length: " + huge +
+        b"Content-Type: application/json\r\nX-Relay-Session-ID: session-test\r\nAuthorization: Bearer owner-test-secret\r\nContent-Length: " + huge +
         b"\r\nConnection: close\r\n\r\n"
     )
     chunks = []
