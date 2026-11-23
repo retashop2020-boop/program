@@ -114,6 +114,15 @@ class RelaySessionManager:
             state, elapsed = self._current_state()
             return RelaySessionSnapshot(self._session_id, state, elapsed)
 
+    def authenticate(self, session_id: str, owner_token: str) -> None:
+        """Validate the current owner without refreshing the heartbeat lease."""
+        with self._lock:
+            state, _ = self._current_state()
+            self._check_session(session_id)
+            self._check_owner(owner_token)
+            if state in (RelaySessionState.EXPIRED, RelaySessionState.SHUTDOWN):
+                raise RelaySessionError("LEASE_NOT_ACTIVE", "Lease is no longer active")
+
     def heartbeat(self, session_id: str, owner_token: str) -> RelaySessionSnapshot:
         """Accept a valid one-way heartbeat and refresh the Lease."""
         with self._lock:
