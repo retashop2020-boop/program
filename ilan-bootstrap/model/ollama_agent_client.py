@@ -33,9 +33,11 @@ class OllamaAgentClient:
             base_url
             or os.environ.get(
                 "ILAN_OLLAMA_URL",
-                "http://localhost:11434",
+                "http://172.24.32.1:18765",
             )
         ).rstrip("/")
+
+        self.relay_token = os.environ.get("ILAN_RELAY_TOKEN")
 
         self.timeout = (
             timeout
@@ -231,15 +233,19 @@ class OllamaAgentClient:
 
         url = self.base_url + self.API_PATH
 
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if self.relay_token:
+            headers["X-Relay-Token"] = self.relay_token
+
         request = Request(
             url,
             data=json.dumps(
                 payload,
                 ensure_ascii=False,
             ).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             method="POST",
         )
 

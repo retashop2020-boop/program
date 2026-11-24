@@ -52,10 +52,11 @@ def test_normal_response_uses_one_model_call():
 
     assert result == "Hello"
     assert len(model.calls) == 1
+    assert model.calls[0]["tools"] == FakeRegistry().definitions()
     assert dispatcher.calls == []
 
 
-def test_tool_call_then_final_response_uses_two_model_calls():
+def test_tool_call_executes_without_second_model_call():
     model = FakeModel([
         make_response({
             "role": "assistant",
@@ -70,7 +71,7 @@ def test_tool_call_then_final_response_uses_two_model_calls():
         }),
         make_response({
             "role": "assistant",
-            "content": "Tool completed",
+            "content": "This response must not be requested",
         }),
     ])
     dispatcher = FakeDispatcher()
@@ -79,14 +80,53 @@ def test_tool_call_then_final_response_uses_two_model_calls():
 
     result = agent.run("Use the tool")
 
-    assert result == "Tool completed"
-    assert len(model.calls) == 2
+    assert "fake_tool" in result
+    assert "tool_result" in result
+    assert len(model.calls) == 1
     assert len(dispatcher.calls) == 1
     assert dispatcher.calls[0][0] == "fake_tool"
+    assert len(model.responses) == 1
+
+
+def test_all_tool_calls_are_executed_in_one_model_turn():
+    model = FakeModel([
+        make_response({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "function": {
+                        "name": "fake_tool",
+                        "arguments": "{}",
+                    },
+                },
+                {
+                    "id": "call-2",
+                    "function": {
+                        "name": "fake_tool",
+                        "arguments": '{"second": true}',
+                    },
+                },
+            ],
+        }),
+    ])
+    dispatcher = FakeDispatcher()
+
+    agent = AgentLoop(model, FakeRegistry(), dispatcher)
+
+    result = agent.run("Use two tools")
+
+    assert len(model.calls) == 1
+    assert len(dispatcher.calls) == 2
+    assert "call-1" in result
+    assert "call-2" in result
 
 
 def test_api_error_is_not_retried():
-    rate_limit_error = OpenRouterError("OpenRouter HTTP error 429: Rate limit exceeded")
+    rate_limit_error = OpenRouterError(
+        "OpenRouter HTTP error 429: Rate limit exceeded"
+    )
     model = FakeModel(error=rate_limit_error)
     dispatcher = FakeDispatcher()
 
@@ -97,32 +137,3 @@ def test_api_error_is_not_retried():
 
     assert len(model.calls) == 1
     assert dispatcher.calls == []
-
-
-def test_tool_round_limit_caps_model_calls():
-    repeated_tool_call = make_response({
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [{
-            "id": "call-repeated",
-            "function": {
-                "name": "fake_tool",
-                "arguments": "{}",
-            },
-        }],
-    })
-
-    model = FakeModel([
-        repeated_tool_call,
-        repeated_tool_call,
-        repeated_tool_call,
-    ])
-    dispatcher = FakeDispatcher()
-
-    agent = AgentLoop(model, FakeRegistry(), dispatcher)
-
-    result = agent.run("Keep requesting the tool")
-
-    assert "tool-call limit" in result
-    assert len(model.calls) == 3
-    assert len(dispatcher.calls) == 2

@@ -81,7 +81,7 @@ def relay_stack(monkeypatch):
     def local_open(request, timeout):
         # Rebuild the Request rather than mutating urllib's request object.
         local_url = request.full_url.replace(
-            "http://127.0.0.1:11434",
+            "http://172.24.32.1:11434",
             "http://127.0.0.1:%d" % upstream.server_address[1],
             1,
         )
@@ -94,6 +94,7 @@ def relay_stack(monkeypatch):
         return build_opener(relay_module._NoRedirect()).open(local_request, timeout=timeout)
 
     monkeypatch.setattr(relay_module, "_open_upstream", local_open)
+    monkeypatch.setenv("ILAN_RELAY_TOKEN", "relay-test-secret")
     manager = FakeSessionManager()
     shutdown_requested = threading.Event()
 
@@ -139,7 +140,7 @@ def post_json(url, payload):
     return send_raw(
         url,
         json.dumps(payload).encode("utf-8"),
-        {"Content-Type": "application/json"},
+        {"Content-Type": "application/json", "X-Relay-Token": "relay-test-secret"},
     )
 
 
@@ -162,7 +163,7 @@ def test_streaming_rejected(relay_stack):
 
 def test_media_type_must_be_exact_json(relay_stack):
     relay, _, _ = relay_stack
-    status, body = send_raw(relay_url(relay, "/api/chat"), b'{"stream":false}', {"Content-Type": "text/application/jsonx"})
+    status, body = send_raw(relay_url(relay, "/api/chat"), b'{"stream":false}', {"Content-Type": "text/application/jsonx", "X-Relay-Token": "relay-test-secret"})
     assert status == 415
 
 
@@ -246,7 +247,7 @@ def test_upstream_http_error_preserved(relay_stack):
     relay, _, _ = relay_stack
     FakeOllamaHandler.response_status = 503
     FakeOllamaHandler.response_body = b'{"error":"model unavailable"}'
-    status, body = post_json(relay_url(relay, "/api/chat"), {"stream": False})
+    status, body = post_json(relay_url(relay, "/api/chat"), {"model": "test", "stream": False})
     assert status == 503
     assert body == FakeOllamaHandler.response_body
 
@@ -275,7 +276,7 @@ def test_incomplete_content_length_rejected(relay_stack):
     relay, _, _ = relay_stack
     host, port = relay.server_address
     client = socket.create_connection((host, port), timeout=2)
-    client.sendall(b"POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 20\r\nConnection: close\r\n\r\n{}")
+    client.sendall(b"POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nX-Relay-Token: relay-test-secret\r\nContent-Length: 20\r\nConnection: close\r\n\r\n{}")
     client.shutdown(socket.SHUT_WR)
     chunks = []
     while True:
@@ -294,7 +295,7 @@ def test_invalid_content_length_rejected(relay_stack):
     relay, _, _ = relay_stack
     host, port = relay.server_address
     client = socket.create_connection((host, port), timeout=2)
-    client.sendall(b"POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: +2\r\nConnection: close\r\n\r\n{}")
+    client.sendall(b"POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nX-Relay-Token: relay-test-secret\r\nContent-Length: +2\r\nConnection: close\r\n\r\n{}")
     chunks = []
     while True:
         chunk = client.recv(4096)
@@ -311,7 +312,7 @@ def test_upstream_redirect_is_not_followed(relay_stack):
     relay, _, _ = relay_stack
     FakeOllamaHandler.response_status = 302
     FakeOllamaHandler.response_body = b"redirect"
-    status, body = post_json(relay_url(relay, "/api/chat"), {"stream": False})
+    status, body = post_json(relay_url(relay, "/api/chat"), {"model": "test", "stream": False})
     assert status == 502
     assert json.loads(body)["error"] == "OLLAMA_REDIRECT_REJECTED"
 
@@ -324,7 +325,7 @@ def test_extremely_long_content_length_is_bounded(relay_stack):
     huge = b"9" * 5000
     client.sendall(
         b"POST /api/chat HTTP/1.1\r\nHost: localhost\r\n"
-        b"Content-Type: application/json\r\nContent-Length: " + huge +
+        b"Content-Type: application/json\r\nX-Relay-Token: relay-test-secret\r\nContent-Length: " + huge +
         b"\r\nConnection: close\r\n\r\n"
     )
     chunks = []

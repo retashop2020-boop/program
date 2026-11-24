@@ -1,19 +1,21 @@
 """Bounded HTTP relay from the WSL AgentLoop to Windows Ollama.
 
-The upstream is deliberately fixed to 127.0.0.1:11434. This module is a
+The upstream is deliberately fixed to 172.24.32.1:11434. This module is a
 server component only; it does not start or supervise a production Relay.
 Compatible with Python 3.10+.
 """
 
+import hmac
 import json
 import math
+import os
 import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-UPSTREAM_URL = "http://127.0.0.1:11434"
+UPSTREAM_URL = "http://172.24.32.1:11434"
 MAX_UPSTREAM_RESPONSE_BYTES = 64 * 1024 * 1024
 INBOUND_SOCKET_TIMEOUT_SECONDS = 30
 
@@ -65,6 +67,7 @@ class RelayHTTPServer(ThreadingHTTPServer):
         self.upstream_timeout = float(upstream_timeout)
         self.max_body_bytes = max_body_bytes
         self.max_response_bytes = max_response_bytes
+        self.relay_token = os.environ.get('ILAN_RELAY_TOKEN')
         self._ready = threading.Event()
         self._on_shutdown_requested = on_shutdown_requested
         super().__init__(server_address, self._make_handler())
@@ -251,6 +254,17 @@ class RelayHTTPServer(ThreadingHTTPServer):
                     callback()
 
             def _proxy_chat(self):
+                expected_token = server.relay_token
+                if not expected_token:
+                    self._json(503, {"error": "RELAY_AUTH_NOT_CONFIGURED"})
+                    return
+                supplied_tokens = self.headers.get_all("X-Relay-Token", [])
+                if (
+                    len(supplied_tokens) != 1
+                    or not hmac.compare_digest(supplied_tokens[0], expected_token)
+                ):
+                    self._json(401, {"error": "RELAY_AUTH_FAILED"})
+                    return
                 content_types = self.headers.get_all("Content-Type", [])
                 if len(content_types) != 1:
                     self._json(415, {"error": "APPLICATION_JSON_REQUIRED"})

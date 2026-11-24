@@ -10,13 +10,11 @@ class AgentLoop:
         tool_registry,
         tool_dispatcher,
         system_prompt="You are Ilan, an AI agent working inside an authorized workspace.",
-        max_tool_rounds=2,
     ):
         self.model_client = model_client
         self.tool_registry = tool_registry
         self.tool_dispatcher = tool_dispatcher
         self.system_prompt = system_prompt
-        self.max_tool_rounds = max_tool_rounds
 
     def _log(self, request_id, event):
         print(
@@ -27,8 +25,6 @@ class AgentLoop:
 
     def run(self, user_message):
         request_id = uuid.uuid4().hex[:8]
-        model_call_count = 0
-
         self._log(request_id, "request_started")
 
         messages = [
@@ -36,66 +32,55 @@ class AgentLoop:
             {"role": "user", "content": user_message},
         ]
 
-        for round_index in range(self.max_tool_rounds + 1):
-            tools = (
-                self.tool_registry.definitions()
-                if round_index < self.max_tool_rounds
-                else None
-            )
+        self._log(request_id, "model_call_started")
 
-            model_call_count += 1
+        try:
+            response = self.model_client.chat(
+                messages,
+                tools=self.tool_registry.definitions(),
+            )
+        except Exception as exc:
             self._log(
                 request_id,
-                f"model_call_started call={model_call_count} "
-                f"round={round_index + 1}",
+                f"model_call_failed error={type(exc).__name__}: {exc}",
             )
+            self._log(request_id, "request_stopped")
+            raise
 
-            try:
-                response = self.model_client.chat(messages, tools=tools)
-            except Exception as exc:
-                self._log(
-                    request_id,
-                    f"model_call_failed call={model_call_count} "
-                    f"error={type(exc).__name__}: {exc}",
-                )
-                self._log(request_id, "request_stopped")
-                raise
+        choices = response.get("choices") or []
 
-            choices = response.get("choices") or []
-            finish_reason = choices[0].get("finish_reason") if choices else None
-            
-            self._log(
-                request_id,
-                f"model_call_succeeded call={model_call_count} finish_reason={finish_reason}",
-            )
+        if not choices:
+            self._log(request_id, "request_failed: no model choices")
+            raise RuntimeError("Model returned no choices.")
 
-            if not choices:
-                self._log(request_id, "request_failed: no model choices")
-                raise RuntimeError("Model returned no choices.")
+        choice = choices[0]
+        assistant_message = choice.get("message") or {}
+        finish_reason = choice.get("finish_reason")
 
-            assistant_message = choices[0].get("message") or {}
-            messages.append(assistant_message)
+        self._log(
+            request_id,
+            f"model_call_succeeded finish_reason={finish_reason}",
+        )
 
-            tool_calls = assistant_message.get("tool_calls") or []
+        content = assistant_message.get("content") or ""
+        tool_calls = assistant_message.get("tool_calls") or []
 
-            if not tool_calls:
-                self._log(
-                    request_id,
-                    f"request_completed model_calls={model_call_count}",
-                )
-                return assistant_message.get("content") or ""
+        report = []
 
-            if round_index >= self.max_tool_rounds:
-                self._log(request_id, "tool_round_limit_reached")
-                return (
-                    "Ilan reached the tool-call limit "
-                    "without producing a final answer."
-                )
+        if content:
+            if tool_calls:
+                report.append(f"Model response:\n{content}")
+            else:
+                report.append(content)
+
+        if tool_calls:
+            report.append("Tool execution results:")
 
             for tool_call in tool_calls:
                 function = tool_call.get("function") or {}
                 name = function.get("name")
                 arguments = function.get("arguments", "{}")
+                call_id = tool_call.get("id")
 
                 try:
                     parsed_arguments = (
@@ -121,7 +106,10 @@ class AgentLoop:
 
                 try:
                     result = self.tool_dispatcher.execute(name, arguments)
-                    tool_result = {"success": True, "result": result}
+                    tool_result = {
+                        "success": True,
+                        "result": result,
+                    }
                     self._log(request_id, f"tool_succeeded name={name}")
 
                 except Exception as exc:
@@ -136,15 +124,17 @@ class AgentLoop:
                         f"error={type(exc).__name__}: {exc}",
                     )
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.get("id"),
-                    "content": json.dumps(
-                        tool_result,
-                        ensure_ascii=False,
-                        default=str,
-                    ),
-                })
+                report.append(
+                    f"- Tool: {name} | Call ID: {call_id}\n"
+                    f"{json.dumps(tool_result, ensure_ascii=False, default=str)}"
+                )
 
-        self._log(request_id, "request_stopped: tool round limit")
-        return "Ilan stopped because the tool-call limit was reached."
+        if not report:
+            report.append("Model returned an empty response.")
+
+        self._log(
+            request_id,
+            f"request_completed model_calls=1 tool_calls={len(tool_calls)}",
+        )
+
+        return "\n\n".join(report)
