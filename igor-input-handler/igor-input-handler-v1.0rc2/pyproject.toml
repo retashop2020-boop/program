@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "igor-input-handler"
+version = "1.0.0rc2"
+description = "A small, interface-independent input collector and message encoder"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Igor" }]
+keywords = ["input", "terminal", "message", "encoding", "unicode"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.4", "pytest-cov>=4.1"]
+
+[tool.setuptools]
+py-modules = ["igor_input_handler"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.coverage.run]
+branch = true
+source = ["igor_input_handler"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
